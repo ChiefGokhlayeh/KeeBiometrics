@@ -1,0 +1,97 @@
+@startuml registration
+
+actor user as "User"
+box "Android Device"
+    participant app as "KeeBiometrics" <<Android App>>
+end box
+box "Host PC"
+    participant keepass as "KeePass" <<Windows App>>
+    participant plugin as "KeeBiometrics Key-Provider" <<KeePass Plug-In>>
+end box
+
+autoactivate on
+
+title Registration Procedure with new Database
+
+activate user
+user -> keepass : createNewDatabase()
+    keepass -> plugin : GetKey(KeyProviderQueryContext) : KeyBytes
+    note left
+    Defined by KeePass Plug-In API
+    end note
+        plugin -> plugin : generateMasterKey() : UnencryptedMasterKey
+        plugin <<-- plugin
+        note left
+        The <i>UnencryptedMasterKey</i> is
+        held in memory until a device
+        has registered.
+        Afterwards it is passed up to
+        the KeePass API to proceed with
+        the database creation process.
+        end note
+        plugin -> plugin : generateHostKeyPair() : HostKeyPair
+        plugin <<-- plugin
+        plugin -> plugin : store(HostKeyPair)
+        plugin <<-- plugin
+        note left
+        The <i>HostKeyPair</i> is stored protected by
+        the current Windows-User credentials.
+        end note
+        plugin -> plugin : generateQrCode(HostDetails) : QrCode
+        plugin <<-- plugin
+        plugin -> user : present(QrCode)
+            note over user
+            QrCode is displayed on-screen
+            and can be scanned via
+            the Android-Devices' camera
+            end note
+            user -> app : register(QrCode)
+                app -> app : generateDeviceData() : DeviceId, DeviceKey
+                app <<-- app
+                app -> plugin : register(DeviceId, DeviceKey)
+                    plugin -> plugin : encrypt(UnencryptedMasterKey, DeviceKey) : EncryptedMasterKey
+                    plugin <<-- plugin
+                    plugin -> plugin : storeAssociation(DeviceId, EncryptedMasterKey)
+                    plugin <<-- plugin
+                app <<-- plugin
+            user <<-- app
+        plugin <<-- user
+    keepass <<-- plugin
+user <<-- keepass
+
+newpage Add TrustedDevice to existing Database
+
+user -> keepass : unlockDatabase()
+    ...Unlock procedure...
+    note right
+    <i>UnencryptedMasterKey</i> is obtained during
+    unlock procedure and held in memory until
+    the database is locked again.
+    end note
+    user <<-- keepass
+user -> plugin : addTrustedDevice()
+    plugin -> plugin : generateQrCode(HostDetails) : QrCode
+    plugin <<-- plugin
+    plugin -> user : present(QrCode)
+            note over user
+            QrCode is displayed on-screen
+            and can be scanned via
+            the Android-Devices' camera
+            end note
+            user -> app : register(QrCode)
+                app -> app : generateDeviceData() : DeviceId, DeviceKey
+                app <<-- app
+                app -> plugin : register(DeviceId, DeviceKey)
+                    plugin -> plugin : encrypt(UnencryptedMasterKey, DeviceKey) : EncryptedMasterKey
+                    plugin <<-- plugin
+                    plugin -> plugin : storeAssociation(DeviceId, EncryptedMasterKey)
+                    plugin <<-- plugin
+                app <<-- plugin
+            user <<-- app
+        plugin <<-- user
+user <<-- plugin
+deactivate user
+
+footer © Andreas Baulig 2018
+
+@enduml

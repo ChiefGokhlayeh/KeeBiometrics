@@ -1,0 +1,176 @@
+<?xml version="1.0" encoding="utf-8"?>
+<layout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <data>
+
+        <variable
+            name="viewModel"
+            type="org.gokhlayeh.keebiometrics.viewmodel.InspectHostViewModel" />
+    </data>
+
+    <android.support.constraint.ConstraintLayout
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        tools:context=".view.ui.InspectHostFragment">
+
+
+        <android.support.design.widget.TextInputEditText
+            android:id="@+id/forcedDisplayName"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="8dp"
+            android:hint="@string/host_display_name_hint"
+            android:inputType="textAutoComplete"
+            android:text="@{viewModel.hostUnderEditObservable.forcedDisplayName}"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="parent"
+            android:imeOptions="actionDone"/>
+
+        <TextView
+            android:id="@+id/databaseNameDescriptor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/database_name_descriptor"
+            app:layout_constraintBottom_toBottomOf="@+id/databaseName"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/databaseName" />
+
+        <TextView
+            android:id="@+id/databaseName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="16dp"
+            android:text="@{viewModel.hostUnderEditObservable.databaseName}"
+            android:textColor="@android:color/black"
+            android:textIsSelectable="true"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/databaseNameDescriptor"
+            app:layout_constraintTop_toBottomOf="@+id/forcedDisplayName" />
+
+        <TextView
+            android:id="@+id/hostNameDescriptor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/host_name_descriptor"
+            app:layout_constraintBottom_toBottomOf="@+id/hostName"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/hostName" />
+
+        <TextView
+            android:id="@+id/hostName"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="16dp"
+            android:text="@{viewModel.hostUnderEditObservable.hostName}"
+            android:textColor="@android:color/black"
+            android:textIsSelectable="true"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintHorizontal_bias="1.0"
+            app:layout_constraintStart_toEndOf="@+id/hostNameDescriptor"
+            app:layout_constraintTop_toBottomOf="@+id/databaseName" />
+
+        <TextView
+            android:id="@+id/hostIdDescriptor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/host_identity_descriptor"
+            app:layout_constraintBottom_toBottomOf="@+id/hostId"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/hostId" />
+
+        <TextView
+            android:id="@+id/hostId"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginStart="8dp"
+            android:text="@{viewModel.hostUnderEditObservable.formatIdentity()}"
+            android:textColor="@android:color/black"
+            android:textIsSelectable="true"
+            android:typeface="monospace"
+            app:layout_constraintBottom_toBottomOf="@+id/copy"
+            app:layout_constraintEnd_toStartOf="@+id/copy"
+            app:layout_constraintStart_toEndOf="@+id/hostIdDescriptor"
+            app:layout_constraintTop_toTopOf="@+id/copy" />
+
+        <TextView
+            android:id="@+id/createdOnDescriptor"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:text="@string/created_on_descriptor"
+            app:layout_constraintBottom_toBottomOf="@+id/createdOn"
+            app:layout_constraintStart_toStartOf="parent"
+            app:layout_constraintTop_toTopOf="@+id/createdOn" />
+
+        <TextView
+            android:id="@+id/createdOn"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginStart="8dp"
+            android:layout_marginTop="16dp"
+            android:textColor="@android:color/black"
+            android:textIsSelectable="true"
+            app:date="@{viewModel.hostUnderEditObservable.created}"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintStart_toEndOf="@+id/createdOnDescriptor"
+            app:layout_constraintTop_toBottomOf="@+id/hostName" />
+
+        <Button
+            android:id="@+id/copy"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="8dp"
+            android:layout_marginTop="16dp"
+            android:enabled="@{viewModel.hostUnderEditObservable != null}"
+            android:text="@android:string/copy"
+            app:layout_constraintEnd_toEndOf="parent"
+            app:layout_constraintTop_toBottomOf="@+id/createdOn" />
+
+        <Button
+            android:id="@+id/ok"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:layout_marginEnd="8dp"
+            android:text="@android:string/ok"
+            android:enabled="@{viewModel.hostUnderEditObservable != null}"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/delete" />
+
+        <Button
+            android:id="@+id/delete"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:layout_marginEnd="8dp"
+            android:text="@string/delete"
+            android:enabled="@{viewModel.hostUnderEditObservable != null}"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toStartOf="@+id/cancel" />
+
+        <Button
+            android:id="@+id/cancel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="16dp"
+            android:layout_marginEnd="8dp"
+            android:text="@android:string/cancel"
+            app:layout_constraintBottom_toBottomOf="parent"
+            app:layout_constraintEnd_toEndOf="parent" />
+
+    </android.support.constraint.ConstraintLayout>
+</layout>

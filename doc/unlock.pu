@@ -1,0 +1,57 @@
+@startuml unlock
+
+actor user as "User"
+box "Android Device"
+    participant app as "KeeBiometrics" <<Android App>>
+end box
+box "Host PC"
+    participant keepass as "KeePass" <<Windows App>>
+    participant plugin as "KeeBiometrics Key-Provider" <<KeePass Plug-In>>
+end box
+
+title Unlock Procedure after successful Registration
+
+activate user
+    user -> keepass : unlockDatabase()
+    activate keepass
+        keepass -> plugin : GetKey(KeyProviderQueryContext) : KeyBytes
+        note left
+        Defined by KeePass Plug-In API
+        end note
+        activate plugin
+            plugin -> plugin : generateRequestId() : RequestId
+            plugin -> plugin : loadRegisteredDevices() : RegisteredDevices
+            plugin -> plugin : obtainMasterKey() : UnencryptedMasterKey
+            activate plugin
+                loop RegisteredDevices.hasNext()            
+                    plugin ->> app : requestDeviceKey(HostDetails, RequestId) : DeviceKey
+                    activate app
+                        app -> user : promptFingerprint() : Cipher
+                        activate user
+                            note right
+                            User has to authenticate
+                            within <i>x</i> amount of seconds
+                            with a valid fingerprint or
+                            the request is aborted.
+                            end note
+                        app <<-- user
+                        deactivate user
+                        app -> app : decryptDeviceKey(Cipher) : DeviceKey
+                    plugin <<-- app
+                    deactivate app
+
+                    plugin -> plugin : decrypt(EncryptedMasterKey, DeviceKey) : UnencryptedMasterKey
+                end
+            plugin <<-- plugin
+            deactivate plugin
+        keepass <<-- plugin
+        deactivate plugin
+
+        keepass -> keepass : doUnlock(KeyBytes)
+    user <<-- keepass
+    deactivate keepass
+deactivate user
+
+footer © Andreas Baulig 2018
+
+@enduml
