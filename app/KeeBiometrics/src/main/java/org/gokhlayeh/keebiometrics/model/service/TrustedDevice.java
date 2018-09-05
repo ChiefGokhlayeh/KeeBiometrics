@@ -1,11 +1,14 @@
 package org.gokhlayeh.keebiometrics.model.service;
 
+import android.content.SharedPreferences;
 import android.os.Build;
 import android.security.keystore.KeyGenParameterSpec;
 import android.security.keystore.KeyProperties;
 import android.support.annotation.NonNull;
+import android.support.annotation.Nullable;
 import android.util.Log;
 
+import org.apache.commons.lang3.Validate;
 import org.bouncycastle.asn1.x500.X500Name;
 import org.bouncycastle.asn1.x509.AlgorithmIdentifier;
 import org.bouncycastle.asn1.x509.SubjectPublicKeyInfo;
@@ -21,6 +24,7 @@ import org.bouncycastle.operator.OperatorCreationException;
 import org.bouncycastle.operator.bc.BcRSAContentSignerBuilder;
 import org.bouncycastle.util.encoders.Base64;
 import org.gokhlayeh.keebiometrics.model.Loadable;
+import org.gokhlayeh.keebiometrics.model.TrustedDeviceLoadParameters;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -35,7 +39,6 @@ import java.security.KeyPairGenerator;
 import java.security.KeyStore;
 import java.security.KeyStoreException;
 import java.security.NoSuchAlgorithmException;
-import java.security.NoSuchProviderException;
 import java.security.PrivateKey;
 import java.security.SecureRandom;
 import java.security.UnrecoverableKeyException;
@@ -60,7 +63,7 @@ import javax.net.ssl.SSLServerSocket;
 import javax.net.ssl.SSLSocket;
 import javax.net.ssl.TrustManagerFactory;
 
-public class TrustedDevice implements Loadable<String> {
+public class TrustedDevice implements Loadable<TrustedDeviceLoadParameters> {
 
     private static final String TAG = "TrustedDevice";
     private static final String SIGN_ALGORITHM = "SHA256WithRSAEncryption";
@@ -68,7 +71,7 @@ public class TrustedDevice implements Loadable<String> {
     private static final int EXPIRY_YEARS = 2;
     private static final int KEY_STORE_PASSWORD_LENGTH = 256;
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String KEY_STORE_CIPHER = "AES/CBC/PKCS7Padding";
+    private static final String KEY_STORE_CIPHER = "AES/CBC/NoPadding";
     private static final String ANDROID_KEY_STORE = "AndroidKeyStore";
 
     private static TrustedDevice trustedDevice;
@@ -84,81 +87,167 @@ public class TrustedDevice implements Loadable<String> {
         return trustedDevice;
     }
 
+    /**
+     * Used to store the <i>device-key</i> and <i>device-identity</i> in a
+     * serializable container.
+     *
+     * @see TrustedDevice#secondaryKeyStore
+     */
+    private final KeyStore primaryKeyStore;
+
+    /**
+     * Used to store passwords used to encrypt entries put in the
+     * {@link TrustedDevice#primaryKeyStore}.
+     * <p>
+     * <p>This {@link KeyStore} is usually an instance of the
+     * <i>AndroidKeyStore</i> as it allows system-side encryption and storage
+     * of any entries put inside.</p>
+     *
+     * @see TrustedDevice#primaryKeyStore
+     */
+    private final KeyStore secondaryKeyStore;
+
     private final ExecutorService executorService;
-    private final KeyStore keyStore;
     private KeyManagerFactory keyManagerFactory;
-    private X509Certificate certificate;
-    private KeyPair keyPair;
+    private DeviceIdentity deviceIdentity;
     private SSLServerSocket serverSocket;
     private Future<?> listenerJob;
-    private SecretKey androidKey;
-    private byte[] encryptedKeyStorePassword;
+    private SecretKey keyForPrimaryKeyStore;
+    private byte[] encryptedIdentityPassword;
 
     private TrustedDevice() throws KeyStoreException, CertificateException, NoSuchAlgorithmException, IOException {
         executorService = Executors.newCachedThreadPool();
 
-        keyStore = KeyStore.getInstance(KeyStore.getDefaultType());
-        keyStore.load(null);
+        primaryKeyStore = KeyStore.getInstance(KeyStore.getDefaultType());
+        primaryKeyStore.load(null);
 
-        keyPair = null;
+        secondaryKeyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
+        secondaryKeyStore.load(null);
+
+        deviceIdentity = null;
     }
 
-    public synchronized void load(@NonNull final String alias) throws GeneralSecurityException, IOException, OperatorCreationException {
-        keyPair = findKeyPair(alias);
-        if (keyPair == null) {
-            keyPair = generateNewKeyPair(DEFAULT_KEY_SIZE);
-            certificate = generateNewCertificate(keyPair);
+    public synchronized void load(@NonNull final TrustedDeviceLoadParameters parameters) throws GeneralSecurityException, IOException, OperatorCreationException {
+        keyForPrimaryKeyStore = loadKeyForPrimaryKeyStore(parameters, null);
+        if (keyForPrimaryKeyStore == null) {
+            // Recreate all keys.
+            keyForPrimaryKeyStore = generateKeyForPrimaryKeyStore(parameters);
+            final byte[] identityPassword = generateIdentityPassword();
+            encryptedIdentityPassword = encrypt(identityPassword, keyForPrimaryKeyStore);
 
-            androidKey = generateAndroidKey(alias);
-            final byte[] password = generateKeyStorePassword();
-            encryptedKeyStorePassword = encryptKeyStorePassword(password);
+            deviceIdentity = generateNewDeviceIdentity(parameters.getIdentityAlias(), toPasswordChars(identityPassword));
+        } else {
+            encryptedIdentityPassword = loadEncryptedIdentityPassword(parameters);
+            final byte[] identityPassword;
+            if (encryptedIdentityPassword == null) {
+                // Recreate identity-password and identity
+                identityPassword = generateIdentityPassword();
+                encryptedIdentityPassword = encrypt(identityPassword, keyForPrimaryKeyStore);
 
-            keyStore.setKeyEntry(alias, keyPair.getPrivate(), Base64.toBase64String(password).toCharArray(), new Certificate[]{certificate});
+                deviceIdentity = generateNewDeviceIdentity(parameters.getIdentityAlias(), toPasswordChars(identityPassword));
+            } else {
+                identityPassword = decrypt(encryptedIdentityPassword, keyForPrimaryKeyStore);
 
-            byte[] decrypted = decryptKeyStorePassword(encryptedKeyStorePassword);
+                deviceIdentity = loadDeviceIdentity(parameters, toPasswordChars(identityPassword));
+                if (deviceIdentity == null) {
+                    // Recreate identity
+                    deviceIdentity = generateNewDeviceIdentity(parameters.getIdentityAlias(), toPasswordChars(identityPassword));
+                }
+            }
+        }
+    }
+
+    private char[] toPasswordChars(final byte[] rawPassword) {
+        return Base64.toBase64String(rawPassword).toCharArray();
+    }
+
+    private byte[] loadEncryptedIdentityPassword(@NonNull final TrustedDeviceLoadParameters parameters) {
+        final SharedPreferences sharedPreferences = parameters.getSharedPreferences();
+        final String base64EncryptedIdentityPassword = sharedPreferences.getString(parameters.getEncryptedIdentityPasswordKey(), null);
+        if (base64EncryptedIdentityPassword == null) {
+            return null;
+        }
+        return Base64.decode(base64EncryptedIdentityPassword);
+    }
+
+    @Nullable
+    private SecretKey loadKeyForPrimaryKeyStore(@NonNull final TrustedDeviceLoadParameters parameters, @Nullable final char[] password) throws GeneralSecurityException {
+        return (SecretKey) secondaryKeyStore.getKey(parameters.getKeyForPrimaryKeyStoreAlias(), password);
+    }
+
+    @NonNull
+    private DeviceIdentity generateNewDeviceIdentity(@NonNull final String alias, @Nullable final char[] password) throws GeneralSecurityException, IOException, OperatorCreationException {
+        final KeyPair identityKeyPair = generateNewKeyPair(DEFAULT_KEY_SIZE);
+        final X509Certificate identityCertificate = generateNewCertificate(identityKeyPair);
+        primaryKeyStore.setKeyEntry(alias, identityKeyPair.getPrivate(), password, new Certificate[]{identityCertificate});
+        return new DeviceIdentity(identityKeyPair, identityCertificate);
+    }
+
+    @Nullable
+    private DeviceIdentity loadDeviceIdentity(@NonNull final TrustedDeviceLoadParameters parameters, @Nullable char[] password) {
+        final KeyPair identityKeyPair = findKeyPair(parameters.getIdentityAlias(), primaryKeyStore, password);
+        if (identityKeyPair == null) {
+            return null;
+        }
+        final X509Certificate identityCertificate = findCertificate(parameters.getIdentityAlias(), primaryKeyStore, password);
+        if (identityCertificate == null) {
+            return null;
+        }
+        return new DeviceIdentity(identityKeyPair, identityCertificate);
+    }
+
+    @Nullable
+    private X509Certificate findCertificate(@NonNull final String alias, @NonNull final KeyStore keyStore, @Nullable final char[] password) {
+        try {
+            return (X509Certificate) keyStore.getCertificate(alias);
+        } catch (final KeyStoreException e) {
+            Log.w(TAG, "findKeyPair: Unable to find key-pair '" + alias + "'.", e);
+            return null;
         }
     }
 
     @NonNull
-    private byte[] encryptKeyStorePassword(final byte[] password) throws GeneralSecurityException {
+    private byte[] encrypt(final byte[] password, final SecretKey secretKey) throws GeneralSecurityException {
         final Cipher cipher = Cipher.getInstance(KEY_STORE_CIPHER);
-        cipher.init(Cipher.ENCRYPT_MODE, androidKey);
+        cipher.init(Cipher.ENCRYPT_MODE, secretKey);
         final byte[] initVector = cipher.getIV();  // Let the cipher suite generate a random IV for us.
-        final ByteBuffer ciphertext = ByteBuffer.allocate(Integer.BYTES + initVector.length + cipher.getOutputSize(password.length));
+        final ByteBuffer ciphertext = ByteBuffer.allocate(Integer.BYTES + initVector.length + Integer.BYTES + cipher.getOutputSize(password.length));
         ciphertext.putInt(initVector.length); // Write IV-length into ciphertext
         ciphertext.put(initVector); // Copy IV after the IV-length.
+        ciphertext.putInt(password.length); // Write password-length into ciphertext
         ciphertext.put(cipher.doFinal(password));
         return ciphertext.array();
     }
 
-    private byte[] decryptKeyStorePassword(final byte[] ciphertext) throws GeneralSecurityException {
+    @NonNull
+    private byte[] decrypt(final byte[] ciphertext, final SecretKey secretKey) throws GeneralSecurityException {
         final Cipher cipher = Cipher.getInstance(KEY_STORE_CIPHER);
         final ByteBuffer buf = ByteBuffer.wrap(ciphertext);
         final byte[] initVector = new byte[buf.getInt()];
         buf.get(initVector);
         final IvParameterSpec ivSpec = new IvParameterSpec(initVector);
-        cipher.init(Cipher.DECRYPT_MODE, androidKey, ivSpec);
+        final int passwordLength = buf.getInt();
         final int pos = buf.position();
-        return cipher.doFinal(ciphertext, pos, ciphertext.length - pos);
+        Validate.isTrue(passwordLength <= ciphertext.length - pos);
+        cipher.init(Cipher.DECRYPT_MODE, secretKey, ivSpec);
+        return cipher.doFinal(ciphertext, pos, passwordLength);
     }
 
-    private SecretKey generateAndroidKey(final @NonNull String alias) throws GeneralSecurityException, IOException {
-        final KeyStore androidKeyStore = KeyStore.getInstance(ANDROID_KEY_STORE);
-        androidKeyStore.load(null);
+    private SecretKey generateKeyForPrimaryKeyStore(final @NonNull TrustedDeviceLoadParameters parameters) throws GeneralSecurityException {
         final KeyGenerator keyGenerator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEY_STORE);
         keyGenerator.init(new KeyGenParameterSpec
                 .Builder(
-                alias,
+                parameters.getKeyForPrimaryKeyStoreAlias(),
                 KeyProperties.PURPOSE_DECRYPT
                         | KeyProperties.PURPOSE_ENCRYPT)
                 .setBlockModes(KeyProperties.BLOCK_MODE_CBC)
-                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_PKCS7)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
                 .build());
 
         return keyGenerator.generateKey();
     }
 
-    private byte[] generateKeyStorePassword() {
+    private byte[] generateIdentityPassword() {
         final byte[] password = new byte[KEY_STORE_PASSWORD_LENGTH];
         RANDOM.nextBytes(password);
         return password;
@@ -189,17 +278,18 @@ public class TrustedDevice implements Loadable<String> {
         return new JcaX509CertificateConverter().setProvider("BC").getCertificate(certificateHolder);
     }
 
-    private synchronized KeyPair generateNewKeyPair(final int keySize) throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
+    @NonNull
+    private KeyPair generateNewKeyPair(final int keySize) throws NoSuchAlgorithmException, InvalidAlgorithmParameterException {
         final KeyPairGenerator keyPairGenerator = KeyPairGenerator.getInstance(KeyProperties.KEY_ALGORITHM_RSA);
         keyPairGenerator.initialize(new RSAKeyGenParameterSpec(keySize, RSAKeyGenParameterSpec.F4));
         return keyPairGenerator.generateKeyPair();
     }
 
-    private KeyPair findKeyPair(final String alias) {
+    private KeyPair findKeyPair(@NonNull String alias, @NonNull final KeyStore keyStore, @Nullable final char[] password) {
         try {
             final Certificate certificate = keyStore.getCertificate(alias);
             if (certificate != null) {
-                return new KeyPair(certificate.getPublicKey(), (PrivateKey) keyStore.getKey(alias, null));
+                return new KeyPair(certificate.getPublicKey(), (PrivateKey) keyStore.getKey(alias, password));
             } else {
                 return null;
             }
@@ -209,8 +299,18 @@ public class TrustedDevice implements Loadable<String> {
         }
     }
 
-    public X509Certificate getCertificate() {
-        return certificate;
+    private SecretKey findSecretKey(@NonNull final String alias, @NonNull final KeyStore keyStore, @Nullable final char[] password) {
+        try {
+            final Certificate certificate = keyStore.getCertificate(alias);
+            if (certificate != null) {
+                return (SecretKey) keyStore.getKey(alias, password);
+            } else {
+                return null;
+            }
+        } catch (final UnrecoverableKeyException | NoSuchAlgorithmException | KeyStoreException e) {
+            Log.w(TAG, "findKeyPair: Unable to find key-pair '" + alias + "'.", e);
+            return null;
+        }
     }
 
     public synchronized void enable() throws NoSuchAlgorithmException, UnrecoverableKeyException, KeyStoreException, KeyManagementException, IOException {
@@ -220,11 +320,11 @@ public class TrustedDevice implements Loadable<String> {
 
         if (keyManagerFactory == null) {
             keyManagerFactory = KeyManagerFactory.getInstance(KeyManagerFactory.getDefaultAlgorithm());
-            keyManagerFactory.init(keyStore, null);
+            keyManagerFactory.init(primaryKeyStore, null);
         }
 
         final TrustManagerFactory trustManagerFactory = TrustManagerFactory.getInstance("BC");
-        trustManagerFactory.init(keyStore);
+        trustManagerFactory.init(primaryKeyStore);
         final SSLContext sslContext = SSLContext.getInstance("TLS");
         sslContext.init(keyManagerFactory.getKeyManagers(), trustManagerFactory.getTrustManagers(), null);
         final ServerSocketFactory ssf = sslContext.getServerSocketFactory();
@@ -285,6 +385,16 @@ public class TrustedDevice implements Loadable<String> {
     }
 
     public synchronized boolean isLoaded() {
-        return keyPair != null;
+        return deviceIdentity != null;
+    }
+
+    private class DeviceIdentity {
+        final KeyPair keyPair;
+        final X509Certificate certificate;
+
+        DeviceIdentity(final KeyPair keyPair, final X509Certificate certificate) {
+            this.keyPair = keyPair;
+            this.certificate = certificate;
+        }
     }
 }

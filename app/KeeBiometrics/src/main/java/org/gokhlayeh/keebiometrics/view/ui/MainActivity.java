@@ -24,6 +24,7 @@ import org.gokhlayeh.keebiometrics.model.KeePassHost;
 import org.gokhlayeh.keebiometrics.model.Loadable;
 import org.gokhlayeh.keebiometrics.model.Saveable;
 import org.gokhlayeh.keebiometrics.model.SecurityVerificator;
+import org.gokhlayeh.keebiometrics.model.TrustedDeviceLoadParameters;
 import org.gokhlayeh.keebiometrics.model.service.KeePassHostRepository;
 import org.gokhlayeh.keebiometrics.model.service.TrustedDevice;
 
@@ -55,7 +56,8 @@ public class MainActivity extends AppCompatActivity {
     public static final String KEEPASSHOST_REPOSITORY_FILEPATH = "keepasshosts.dat";
     public static final String TRUSTEDDEVICE_FILEPATH = "trusteddevice.dat";
 
-    private static final String MASTER_KEY_ALIAS = "org.gokhlayeh.keebiometrics.key:KeeBiometrics";
+    private static final String KEY_FOR_PRIMARY_KEY_STORE_ALIAS = "org.gokhlayeh.keebiometrics.key:KeeBiometrics";
+    private static final String DEVICE_IDENTITY_ALIAS = "org.gokhlayeh.keebiometrics.key:KeeBiometrics";
 
     private static final Executor DEFAULT_EXECUTOR = Executors.newCachedThreadPool();
 
@@ -265,7 +267,12 @@ public class MainActivity extends AppCompatActivity {
     public void loadTrustedDevice() {
         if (!TrustedDevice.getSelf().isLoaded()) {
             final LoadTrustedDeviceTask loaderTask = new LoadTrustedDeviceTask(this, TrustedDevice.getSelf());
-            loaderTask.executeOnExecutor(DEFAULT_EXECUTOR, MASTER_KEY_ALIAS);
+            final TrustedDeviceLoadParameters parameters = new TrustedDeviceLoadParameters(
+                    getPreferences(Context.MODE_PRIVATE),
+                    KEY_FOR_PRIMARY_KEY_STORE_ALIAS,
+                    DEVICE_IDENTITY_ALIAS,
+                    getString(R.string.pref_encrypted_identity_key));
+            loaderTask.executeOnExecutor(DEFAULT_EXECUTOR, parameters);
         }
     }
 
@@ -324,13 +331,13 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    private static class LoadTrustedDeviceTask extends AsyncLoadTask<String, String, Void, Void> {
-        LoadTrustedDeviceTask(@Nullable Activity activity, @NonNull Loadable<String> loadable) {
+    private static class LoadTrustedDeviceTask extends AsyncLoadTask<TrustedDeviceLoadParameters, TrustedDeviceLoadParameters, Void, Void> {
+        LoadTrustedDeviceTask(@Nullable Activity activity, @NonNull Loadable<TrustedDeviceLoadParameters> loadable) {
             super(activity, loadable);
         }
 
         @Override
-        protected void doLoad(@NonNull final Loadable<String> loadable, final String target) throws Throwable {
+        protected void doLoad(@NonNull final Loadable<TrustedDeviceLoadParameters> loadable, final TrustedDeviceLoadParameters target) throws Throwable {
             loadable.load(target);
         }
 
