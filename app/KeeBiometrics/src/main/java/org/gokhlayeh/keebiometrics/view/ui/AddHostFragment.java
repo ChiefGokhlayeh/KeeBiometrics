@@ -6,6 +6,7 @@ import android.content.Intent;
 import android.databinding.DataBindingUtil;
 import android.net.Uri;
 import android.os.Bundle;
+import android.support.annotation.IntDef;
 import android.support.annotation.NonNull;
 import android.support.annotation.Nullable;
 import android.support.v4.app.Fragment;
@@ -21,6 +22,8 @@ import org.gokhlayeh.keebiometrics.viewmodel.AddHostViewModel;
 import org.xml.sax.SAXException;
 
 import java.io.IOException;
+import java.lang.annotation.Retention;
+import java.lang.annotation.RetentionPolicy;
 import java.security.NoSuchAlgorithmException;
 import java.security.spec.InvalidKeySpecException;
 
@@ -30,9 +33,12 @@ public class AddHostFragment extends Fragment {
 
     private static final String TAG = "AddHostFragment";
 
-    private enum Request {
-        SCAN_QR_CODE
+    @Retention(RetentionPolicy.SOURCE)
+    @IntDef({SCAN_QR_CODE_REQUEST})
+    public @interface Request {
     }
+
+    public static final int SCAN_QR_CODE_REQUEST = 0;
 
     private FragmentAddHostBinding binding;
     private AddHostViewModel viewModel;
@@ -41,10 +47,10 @@ public class AddHostFragment extends Fragment {
     }
 
     @Override
-    public void onActivityResult(int requestCode, int resultCode, Intent data) {
+    public void onActivityResult(@Request int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
 
-        if (requestCode == Request.SCAN_QR_CODE.ordinal()) {
+        if (requestCode == SCAN_QR_CODE_REQUEST) {
             if (resultCode == Activity.RESULT_OK) {
                 String contents = data.getStringExtra("SCAN_RESULT");
                 Log.d(TAG, "QR-Code scanned: " + contents);
@@ -98,7 +104,7 @@ public class AddHostFragment extends Fragment {
             Intent intent = new Intent("com.google.zxing.client.android.SCAN");
             intent.putExtra("SCAN_MODE", "QR_CODE_MODE");
 
-            startActivityForResult(intent, Request.SCAN_QR_CODE.ordinal());
+            startActivityForResult(intent, SCAN_QR_CODE_REQUEST);
         } catch (Exception e) {
             Log.w(TAG, "No Zxing QR-code scanner installed, issuing install via marketplace.");
             Uri marketUri = Uri.parse("market://details?id=com.google.zxing.client.android");
