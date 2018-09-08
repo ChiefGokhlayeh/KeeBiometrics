@@ -13,3 +13,11 @@ After installing the `.apk`  on your phone/tablet and dropping the plug-in in yo
 
 After you have a __Trusted-Device__ registered, you can unlock your database via fingerprint, face-recognition or any other biometric authentication method provided by your Android OS. The following diagram shows the unlock-procedure:
 ![PlantUML Unlock](http://www.plantuml.com/plantuml/png/1S6z3G8n30RG_gQ01UAUwaG11LC4vnCN4Tid_uZrUM-Fx9ubQxjEvLK3vUjoP9vn8_B-Qv-PHxqhu6oQq6niGWy7dd3JAKOlu3vDa3uvI7ead8OnbIxZRpjhsw6ZPFq1)
+
+## Security
+
+While designing this application special care was taken with regards to security. The goal was to hold up to the current state-of-the-art security expectations, and in particular, not to imped the level of security presented by KeePass 2.x. Still KeeBiometrics is heavily dependant on third-party software, such as the Windows/Android OS, the sensor-hardware, or security libraries used for encryption and signing. These factors may differ from device to device, and make an overall security assessment difficult. Still these outside factors should be kept in mind when using this application.
+
+KeeBiometrics itself is using protocols such as [TLSv1.2](https://tools.ietf.org/html/rfc5246) with client _and_ server authentication combined with proven algorithms such as [RSA](https://en.wikipedia.org/wiki/RSA_%28cryptosystem%29) and [AES](https://de.wikipedia.org/wiki/Advanced_Encryption_Standard) to reduce its own attack-surface.
+
+In case You find any security issues or risks that you think should be discussed, please open an issue on the project's [GitHub](https://github.com/FreeGeronimo/KeeBiometrics). Feedback is always welcome and reviews by the public are seen as an essential building block in creating a secure application.
