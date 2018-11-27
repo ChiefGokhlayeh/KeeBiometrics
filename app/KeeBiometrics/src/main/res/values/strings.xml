@@ -7,7 +7,7 @@
     <string name="delete">Delete</string>
     <string name="delete_host_dialog_title">Delete Host</string>
     <string name="delete_host_dialog_content_confirm">Are you sure you want to delete host \'%s\'?</string>
-    <string name="delete_host_dialog_content_host_missing">Host can\'t be deleted because it doesn't exist.</string>
+    <string name="delete_host_dialog_content_host_missing">Host can\'t be deleted because it doesn\'t exist.</string>
     <string name="host_identity_clipboard_label">Host-ID</string>
     <string name="copied_to_clipboard">Copied to clipboard</string>
     <string name="clipboard_unavailable">Clipboard unavailable</string>
